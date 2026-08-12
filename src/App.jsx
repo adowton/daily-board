@@ -57,6 +57,17 @@ export default function App() {
   const saveStateRef = useRef("idle");
   useEffect(() => { saveStateRef.current = saveState; }, [saveState]);
 
+  // All mutations go through this instead of calling apiCall directly, so
+  // saveState reflects "saving" for the whole round trip. That's what stops
+  // the 12s background refresh from landing mid-write and clobbering a click
+  // with stale data (the bug where effort tags reverted after a refresh).
+  function trackedApiCall(body) {
+    setSaveState("saving");
+    return apiCall(body)
+      .then((res) => { setSaveState("idle"); return res; })
+      .catch((e) => { console.error(e); setSaveState("error"); throw e; });
+  }
+
   async function loadBoard() {
     try {
       const data = await apiLoad();
@@ -96,7 +107,7 @@ export default function App() {
     setNewCatName("");
     try {
       const order = categories.length;
-      const { id } = await apiCall({ table: "categories", op: "create", fields: { name, order } });
+      const { id } = await trackedApiCall({ table: "categories", op: "create", fields: { name, order } });
       const cat = { id, name, priorityTaskId: null, order };
       setCategories((prev) => [...prev, cat]);
       setActiveCat(id);
@@ -108,7 +119,7 @@ export default function App() {
   }
   function renameCategory(id, name) {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
-    apiCall({ table: "categories", op: "update", id, fields: { name } }).catch((e) => { console.error(e); setSaveState("error"); });
+    trackedApiCall({ table: "categories", op: "update", id, fields: { name } }).catch((e) => { console.error(e); setSaveState("error"); });
   }
   function deleteCategory(id) {
     const remaining = categories.filter((c) => c.id !== id);
@@ -120,9 +131,9 @@ export default function App() {
     if (activeCat === id) { setActiveCat(ALL_ID); setActiveSub(null); }
     // Best-effort cascade: tasks and projects under this category get cleaned up too.
     Promise.all([
-      ...taskIds.map((tid) => apiCall({ table: "tasks", op: "delete", id: tid })),
-      ...subIds.map((sid) => apiCall({ table: "projects", op: "delete", id: sid })),
-      apiCall({ table: "categories", op: "delete", id }),
+      ...taskIds.map((tid) => trackedApiCall({ table: "tasks", op: "delete", id: tid })),
+      ...subIds.map((sid) => trackedApiCall({ table: "projects", op: "delete", id: sid })),
+      trackedApiCall({ table: "categories", op: "delete", id }),
     ]).catch((e) => { console.error(e); setSaveState("error"); });
   }
   function moveCategory(id, dir) {
@@ -133,7 +144,7 @@ export default function App() {
       const copy = [...prev];
       [copy[idx], copy[newIdx]] = [copy[newIdx], copy[idx]];
       const reindexed = copy.map((c, i) => ({ ...c, order: i }));
-      Promise.all(reindexed.map((c) => apiCall({ table: "categories", op: "update", id: c.id, fields: { order: c.order } })))
+      Promise.all(reindexed.map((c) => trackedApiCall({ table: "categories", op: "update", id: c.id, fields: { order: c.order } })))
         .catch((e) => { console.error(e); setSaveState("error"); });
       return reindexed;
     });
@@ -144,7 +155,7 @@ export default function App() {
     if (!name) return;
     setNewSubName((prev) => ({ ...prev, [catId]: "" }));
     try {
-      const { id } = await apiCall({ table: "projects", op: "create", fields: { name, categoryId: catId, health: "green" } });
+      const { id } = await trackedApiCall({ table: "projects", op: "create", fields: { name, categoryId: catId, health: "green" } });
       setSubcategories((prev) => [...prev, { id, categoryId: catId, name, health: "green" }]);
       setActiveCat(catId);
       setActiveSub(id);
@@ -163,7 +174,7 @@ export default function App() {
         return { ...s, health: nextHealth };
       })
     );
-    apiCall({ table: "projects", op: "update", id: subId, fields: { health: nextHealth } }).catch((e) => { console.error(e); setSaveState("error"); });
+    trackedApiCall({ table: "projects", op: "update", id: subId, fields: { health: nextHealth } }).catch((e) => { console.error(e); setSaveState("error"); });
   }
   function deleteSubcategory(id) {
     const taskIds = tasks.filter((t) => t.subcategoryId === id).map((t) => t.id);
@@ -171,8 +182,8 @@ export default function App() {
     setTasks((prev) => prev.filter((t) => t.subcategoryId !== id));
     if (activeSub === id) setActiveSub(null);
     Promise.all([
-      ...taskIds.map((tid) => apiCall({ table: "tasks", op: "delete", id: tid })),
-      apiCall({ table: "projects", op: "delete", id }),
+      ...taskIds.map((tid) => trackedApiCall({ table: "tasks", op: "delete", id: tid })),
+      trackedApiCall({ table: "projects", op: "delete", id }),
     ]).catch((e) => { console.error(e); setSaveState("error"); });
   }
 
@@ -180,7 +191,7 @@ export default function App() {
     const t = text.trim();
     if (!t || !catId || catId === ALL_ID) return;
     try {
-      const { id } = await apiCall({ table: "tasks", op: "create", fields: { text: t, status: "todo", effort: null, categoryId: catId, subcategoryId: subId || null } });
+      const { id } = await trackedApiCall({ table: "tasks", op: "create", fields: { text: t, status: "todo", effort: null, categoryId: catId, subcategoryId: subId || null } });
       setTasks((prev) => [...prev, { id, categoryId: catId, subcategoryId: subId || null, text: t, status: "todo", effort: null, createdAt: Date.now() }]);
     } catch (e) {
       console.error(e);
@@ -194,7 +205,7 @@ export default function App() {
       nextEffort = t.effort === value ? null : value;
       return { ...t, effort: nextEffort };
     }));
-    apiCall({ table: "tasks", op: "update", id: taskId, fields: { effort: nextEffort } }).catch((e) => { console.error(e); setSaveState("error"); });
+    trackedApiCall({ table: "tasks", op: "update", id: taskId, fields: { effort: nextEffort } }).catch((e) => { console.error(e); setSaveState("error"); });
   }
   function cycleStatus(taskId) {
     let nextStatus;
@@ -206,12 +217,12 @@ export default function App() {
         return { ...t, status: nextStatus };
       })
     );
-    apiCall({ table: "tasks", op: "update", id: taskId, fields: { status: nextStatus } }).catch((e) => { console.error(e); setSaveState("error"); });
+    trackedApiCall({ table: "tasks", op: "update", id: taskId, fields: { status: nextStatus } }).catch((e) => { console.error(e); setSaveState("error"); });
     if (nextStatus === "done") {
       const clearedCat = categories.find((c) => c.priorityTaskId === taskId);
       if (clearedCat) {
         setCategories((prev) => prev.map((c) => (c.priorityTaskId === taskId ? { ...c, priorityTaskId: null } : c)));
-        apiCall({ table: "categories", op: "update", id: clearedCat.id, fields: { priorityTaskId: null } }).catch((e) => console.error(e));
+        trackedApiCall({ table: "categories", op: "update", id: clearedCat.id, fields: { priorityTaskId: null } }).catch((e) => console.error(e));
       }
     }
   }
@@ -219,8 +230,8 @@ export default function App() {
     const clearedCat = categories.find((c) => c.priorityTaskId === taskId);
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
     setCategories((prev) => prev.map((c) => (c.priorityTaskId === taskId ? { ...c, priorityTaskId: null } : c)));
-    apiCall({ table: "tasks", op: "delete", id: taskId }).catch((e) => { console.error(e); setSaveState("error"); });
-    if (clearedCat) apiCall({ table: "categories", op: "update", id: clearedCat.id, fields: { priorityTaskId: null } }).catch((e) => console.error(e));
+    trackedApiCall({ table: "tasks", op: "delete", id: taskId }).catch((e) => { console.error(e); setSaveState("error"); });
+    if (clearedCat) trackedApiCall({ table: "categories", op: "update", id: clearedCat.id, fields: { priorityTaskId: null } }).catch((e) => console.error(e));
   }
   function togglePriority(catId, taskId) {
     let nextPriority;
@@ -229,7 +240,7 @@ export default function App() {
       nextPriority = c.priorityTaskId === taskId ? null : taskId;
       return { ...c, priorityTaskId: nextPriority };
     }));
-    apiCall({ table: "categories", op: "update", id: catId, fields: { priorityTaskId: nextPriority } }).catch((e) => { console.error(e); setSaveState("error"); });
+    trackedApiCall({ table: "categories", op: "update", id: catId, fields: { priorityTaskId: nextPriority } }).catch((e) => { console.error(e); setSaveState("error"); });
   }
   function clearDoneInScope() {
     let idsToDelete = [];
@@ -240,7 +251,7 @@ export default function App() {
       idsToDelete = tasks.filter((t) => t.categoryId === activeCat && t.status === "done").map((t) => t.id);
       setTasks((prev) => prev.filter((t) => !(t.categoryId === activeCat && t.status === "done")));
     }
-    Promise.all(idsToDelete.map((id) => apiCall({ table: "tasks", op: "delete", id }))).catch((e) => { console.error(e); setSaveState("error"); });
+    Promise.all(idsToDelete.map((id) => trackedApiCall({ table: "tasks", op: "delete", id }))).catch((e) => { console.error(e); setSaveState("error"); });
   }
 
   function startReview() { setMode("review"); setReviewIndex(0); }
@@ -309,10 +320,12 @@ export default function App() {
           font-family: 'Inter', sans-serif;
           color: var(--c-ink);
           background: var(--c-bg);
-          border-radius: 16px;
-          max-width: 1000px;
-          margin: 0 auto;
-          box-shadow: 0 1px 2px rgba(16,17,20,0.05), 0 8px 24px rgba(16,17,20,0.04);
+          width: 100%;
+          height: 100%;
+          max-width: none;
+          margin: 0;
+          display: flex;
+          flex-direction: column;
           overflow: hidden;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -327,9 +340,9 @@ export default function App() {
         .review-btn.exit { background: var(--c-ink); }
         .review-btn.exit:hover { background: #000; }
 
-        .board-body { display: flex; min-height: 460px; background: var(--c-bg); }
+        .board-body { display: flex; flex: 1; min-height: 0; background: var(--c-bg); }
 
-        .tab-rail { width: 236px; flex-shrink: 0; padding: 14px 10px 14px 12px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+        .tab-rail { width: 236px; flex-shrink: 0; padding: 14px 10px 14px 12px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }
 
         .all-tab { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 13.5px; font-weight: 700; color: var(--c-ink-soft); margin-bottom: 10px; }
         .all-tab:hover { background: rgba(20,22,26,0.05); }
@@ -377,7 +390,7 @@ export default function App() {
         .edit-toggle { background: none; border: none; color: var(--c-muted); font-size: 11.5px; cursor: pointer; display: flex; align-items: center; gap: 5px; padding: 4px 0; }
         .edit-toggle:hover { color: var(--c-ink); }
 
-        .panel { flex: 1; background: var(--c-surface); padding: 18px 24px 22px 24px; display: flex; flex-direction: column; min-width: 0; }
+        .panel { flex: 1; background: var(--c-surface); padding: 18px 24px 22px 24px; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; }
 
         .add-task-bar { display: flex; gap: 8px; margin-bottom: 18px; }
         .add-task-bar input { flex: 1; border: 1px solid var(--c-line); border-radius: 10px; padding: 11px 13px; font-size: 13.5px; font-family: 'Inter', sans-serif; background: var(--c-bg); color: var(--c-ink); }
@@ -416,7 +429,7 @@ export default function App() {
         .filter-chip.quick.active { background: var(--c-quick); border-color: var(--c-quick); }
         .filter-chip.high.active { background: var(--c-high); border-color: var(--c-high); }
 
-        .review-wrap { padding: 32px 30px 26px 30px; background: var(--c-surface); }
+        .review-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 32px 30px 26px 30px; background: var(--c-surface); }
         .review-progress { display: flex; gap: 6px; justify-content: center; margin-bottom: 22px; }
         .review-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-line); }
         .review-dot.active { background: var(--c-accent); width: 18px; border-radius: 4px; }
@@ -435,9 +448,8 @@ export default function App() {
         .finish-banner p { color: var(--c-muted); font-size: 13.5px; margin-bottom: 20px; }
 
         @media (max-width: 720px) {
-          .board-root { border-radius: 0; max-width: 100%; box-shadow: none; }
           .board-body { flex-direction: column; }
-          .tab-rail { width: 100%; max-height: 42vh; border-right: none; border-bottom: 1px solid var(--c-line); padding: 12px 10px; }
+          .tab-rail { width: 100%; max-height: 42vh; border-bottom: 1px solid var(--c-line); padding: 12px 10px; }
           .panel { padding: 16px 16px 24px 16px; }
           .board-header { padding: 14px 16px; }
           .board-title { font-size: 16px; }
