@@ -4,13 +4,16 @@
 
 html, body, #root {
   height: 100%;
+  margin: 0;
 }
 
 body {
-  margin: 0;
   background: #EEF0F3;
   -webkit-font-smoothing: antialiased;
-  /* Respect iPhone notches / home indicator when the app is added to the home screen */
+  /* The app manages its own internal scroll regions (sidebar, task panel),
+     so the page itself doesn't need to scroll. */
+  overflow: hidden;
+  /* Respect iPhone notches / home indicator when added to the home screen */
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   overscroll-behavior-y: contain;
@@ -18,11 +21,5 @@ body {
 
 #root {
   display: flex;
-  flex-direction: column;
-}
-
-@media (min-width: 721px) {
-  #root {
-    padding: 24px 16px;
-  }
+  height: 100%;
 }
