@@ -7,12 +7,12 @@ import {
 const API = "/.netlify/functions/board";
 
 async function apiCall(body) {
-  const res = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetch(API, { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
   return res.json();
 }
 async function apiLoad() {
-  const res = await fetch(API);
+  const res = await fetch(API, { cache: "no-store" });
   if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
   return res.json();
 }
