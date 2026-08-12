@@ -1,0 +1,28 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #EEF0F3;
+  -webkit-font-smoothing: antialiased;
+  /* Respect iPhone notches / home indicator when the app is added to the home screen */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  overscroll-behavior-y: contain;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 721px) {
+  #root {
+    padding: 24px 16px;
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "Daily Board — Ray White Altona",
+  "short_name": "Daily Board",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#EEF0F3",
+  "theme_color": "#14161A",
+  "icons": []
+}
