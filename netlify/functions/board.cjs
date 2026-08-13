@@ -68,6 +68,7 @@ function toAirtableFields(table, fields) {
     if ("effort" in fields) out["Effort"] = fields.effort ? EFFORT_LABELS[fields.effort] : null;
     if ("categoryId" in fields) out["Category"] = fields.categoryId ? [fields.categoryId] : [];
     if ("subcategoryId" in fields) out["Project"] = fields.subcategoryId ? [fields.subcategoryId] : [];
+    if ("completedAt" in fields) out["Completed At"] = fields.completedAt || null;
   }
   return out;
 }
@@ -108,6 +109,7 @@ exports.handler = async (event) => {
         effort: EFFORT_KEYS[r.fields["Effort"]] || null,
         categoryId: (r.fields["Category"] || [])[0] || null,
         subcategoryId: (r.fields["Project"] || [])[0] || null,
+        completedAt: typeof r.fields["Completed At"] === "number" ? r.fields["Completed At"] : null,
         createdAt: new Date(r.createdTime).getTime(),
       }));
 
